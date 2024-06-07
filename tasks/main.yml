@@ -1,0 +1,29 @@
+- name: Проверка наличия файла /etc/docker/daemon.json
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: docker_daemon_json
+
+- name: Если файл существует
+  when: docker_daemon_json.stat.exists
+  block:
+    - name: Считывание содержимого daemon.json
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: docker_daemon_content
+
+    - name: Установка переменной с содержимым файла daemon.json
+      ansible.builtin.set_fact:
+        docker_config: "{{ (docker_daemon_content['content'] | b64decode | from_json) }}"
+
+- name: Добавление registry-mirrors в переменную docker_config
+  ansible.builtin.set_fact:
+    docker_config: "{{ docker_config | default({}) | combine({'registry-mirrors': [docker_mirror.registry]}) }}"
+
+- name: Создание или обновление файла /etc/docker/daemon.json
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ docker_config | to_nice_json }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload docker
